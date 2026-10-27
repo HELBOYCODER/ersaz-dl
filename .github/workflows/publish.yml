@@ -1,0 +1,57 @@
+name: Publish uploaded files to Pages
+
+on:
+  workflow_dispatch:
+    inputs:
+      filename:
+        description: 'File name (e.g. PromptEngine-1.0.1.apk)'
+        required: true
+      artifact:
+        description: 'Artifact name produced by upload-artifact (always "payload")'
+        required: false
+        default: 'payload'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download payload artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ github.event.inputs.artifact }}
+          path: payload
+
+      - name: Place file at filename
+        run: |
+          mkdir -p site
+          F="payload/${{ github.event.inputs.filename }}"
+          [ -f "$F" ] || F=$(find payload -type f | head -1)
+          cp "$F" "site/${{ github.event.inputs.filename }}"
+          # regenerate index listing all published files
+          {
+            echo '<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ERSAZ DL</title><style>body{background:#05060f;color:#e8eaf6;font-family:Tahoma,sans-serif;display:flex;min-height:100vh;align-items:center;justify-content:center}.card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);border-radius:24px;padding:44px;max-width:520px;width:100%}h1{color:#fff;font-size:22px;margin-bottom:18px;text-align:center}a.f{display:flex;justify-content:space-between;gap:12px;padding:14px 18px;margin-bottom:10px;border-radius:12px;background:linear-gradient(135deg,#00f0ff22,#7c5cff22);border:1px solid #00f0ff44;color:#00f0ff;text-decoration:none;font-weight:700}a.f:hover{background:linear-gradient(135deg,#00f0ff33,#7c5cff33)}span{color:#8a93b8;font-weight:400;font-size:12px;align-self:center}</style></head><body><div class="card"><h1>📦 فایل‌های آپلودشده</h1>'
+            for f in site/*; do n=$(basename "$f"); s=$(du -h "$f" | cut -f1); [ "$n" = "index.html" ] && continue; echo "<a class='f' href='$n' download>$n <span>$s</span></a>"; done
+            echo '</div></body></html>'
+          } > site/index.html
+          ls -lh site/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
